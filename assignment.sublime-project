@@ -1,0 +1,44 @@
+{
+	"build_systems":
+	[
+		{
+			"cmd":
+			[
+				"close_all_windows.bat"
+			],
+			"name": "avango - Clean",
+			"variants":
+			[
+				{
+					"cmd":
+					[
+						"start-A.bat"
+					],
+					"name": "Run on A",
+					"working_dir": "$project_path"
+				},
+				{
+					"cmd":
+					[
+						"start-B.bat"
+					],
+					"name": "Run on B",
+					"working_dir": "$project_path"
+				}
+			],
+			"working_dir": "$project_path"
+		}
+	],
+	"folders":
+	[
+		{
+			"folder_exclude_patterns":
+			[
+				"*__pycache__*",
+				"*.sublime-project",
+				"*hmd-tracker*"
+			],
+			"path": "."
+		}
+	]
+}
