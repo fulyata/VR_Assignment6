@@ -120,6 +120,7 @@ class ManipulationTechnique(avango.script.Script):
         self.enable_flag = False
         
         self.selected_node = None
+        self.selected_nodes = []
         self.dragged_node = None
         self.dragging_offset_mat = avango.gua.make_identity_mat()
                 
@@ -127,6 +128,7 @@ class ManipulationTechnique(avango.script.Script):
         self.pick_result = None # chosen pick result
         self.white_list = []   
         self.black_list = ["invisible"]
+        self.nodes_behind_selected_node = []
 
         #self.pick_options = avango.gua.PickingOptions.PICK_ONLY_FIRST_OBJECT \
         #                    | avango.gua.PickingOptions.PICK_ONLY_FIRST_FACE \
@@ -193,7 +195,7 @@ class ManipulationTechnique(avango.script.Script):
     def get_roll_angle(self, MAT4):
         #print(MAT4.get_rotate())
         _dir_vec = avango.gua.make_rot_mat(MAT4.get_rotate()) * avango.gua.Vec3(0.0,0.0,-1.0)
-        #print(_dir_vec)
+        #print(avango.gua.make_rot_mat(MAT4.get_rotate()) * avango.gua.Vec3(0.0,0.0,-1.0))
         _dir_vec = avango.gua.Vec3(_dir_vec.x, _dir_vec.y, _dir_vec.z) # cast to Vec3
         
         _ref_side_vec = avango.gua.Vec3(1.0,0.0,0.0)
@@ -207,8 +209,8 @@ class ManipulationTechnique(avango.script.Script):
         _side_vec = avango.gua.Vec3(_side_vec.x, _side_vec.y, _side_vec.z) # cast to Vec3
         #print(_ref_side_vec, _side_vec)
 
-        _axis = _ref_side_vec.cross(_side_vec)
-        _axis.normalize()
+        #_axis = _ref_side_vec.cross(_side_vec)
+        #_axis.normalize()
     
         _angle = math.degrees(math.acos(min(max(_ref_side_vec.dot(_side_vec), -1.0), 1.0)))
         #print(_angle)
@@ -232,8 +234,27 @@ class ManipulationTechnique(avango.script.Script):
         ## trimesh intersection
         self.mf_pick_result = self.SCENEGRAPH.ray_test(self.ray, self.pick_options, self.white_list, self.black_list)
 
-   
-   
+
+
+    # def update_intersection_DpR(self, PICK_MAT = avango.gua.make_identity_mat(), PICK_LENGTH = 1.0):
+    #     # update ray parameters
+    #     self.ray.Origin.value = PICK_MAT.get_translate()
+
+    #     _vec = avango.gua.make_rot_mat(PICK_MAT.get_rotate_scale_corrected()) * avango.gua.Vec3(0.0,0.0,-1.0)
+    #     _vec = avango.gua.Vec3(_vec.x,_vec.y,_vec.z)
+
+    #     self.ray.Direction.value = _vec * PICK_LENGTH
+
+    #     ## trimesh intersection
+    #     self.mf_pick_result = self.SCENEGRAPH.ray_test(self.ray, self.pick_options, self.white_list, self.black_list)
+
+    def highlight(self, node, color, color_override = True):
+        if node is not None:
+            for _child_node in node.Children.value:
+                if _child_node.get_type() == 'av::gua::TriMeshNode':
+                    _child_node.Material.value.set_uniform("enable_color_override", color_override)
+                    _child_node.Material.value.set_uniform("override_color", color)
+
     def selection(self):
         if len(self.mf_pick_result.value) > 0: # intersection found
             self.pick_result = self.mf_pick_result.value[0] # get first pick result
@@ -256,15 +277,12 @@ class ManipulationTechnique(avango.script.Script):
         else:
             self.selected_node = None
 
-
         ## enable node highlighting
         if self.selected_node is not None:
             for _child_node in self.selected_node.Children.value:
                 if _child_node.get_type() == 'av::gua::TriMeshNode':
                     _child_node.Material.value.set_uniform("enable_color_override", True)
-                    _child_node.Material.value.set_uniform("override_color", avango.gua.Vec4(1.0,0.0,0.0,0.3)) # 30% color override
-                
-
+                    _child_node.Material.value.set_uniform("override_color", avango.gua.Vec4(1.0,0.0,0.0,0.3)) # 30% color override               
 
     ### callback functions ###
 
@@ -372,7 +390,7 @@ class Ray(ManipulationTechnique):
         else:
             _node = self.pick_result.Object.value # get intersected geometry node
     
-            _pick_pos = self.pick_result.Position.value # pick position in object coordinate system
+            #_pick_pos = self.pick_result.Position.value # pick position in object coordinate system
             _pick_world_pos = self.pick_result.WorldPosition.value # pick position in world coordinate system
     
             _distance = self.pick_result.Distance.value * self.ray_length # pick distance in ray coordinate system
@@ -384,6 +402,8 @@ class Ray(ManipulationTechnique):
         
         ## possibly perform object dragging
         ManipulationTechnique.dragging(self) # call base-class function
+
+
 
 
 
@@ -429,33 +449,114 @@ class DepthRay(ManipulationTechnique):
         ### set initial states ###
         self.highlighted_nodes = []
         self.enable(False)
-    
+
+    def enable(self, BOOL): # extend respective base-class function
+        ManipulationTechnique.enable(self, BOOL) # call base-class function
+
+        # if self.enable_flag == False:
+        #     if self.selected_node!=None:
+        #         for child in self.selected_node.Children.value:
+        #             if child.get_type() == 'av::gua::TriMeshNode':
+        #                 child.Material.value.set_uniform("enable_color_override", False)
 
     ### callback functions ###
     def evaluate(self): # implement respective base-class function
         if self.enable_flag == False:
             return
 
+
         ## To-Do: implement depth ray technique here
-        #angle = self.get_roll_angle(self.pointer_node.Transform.value)
+        #angle2 = self.get_roll_angle(self.pointer_node.Transform.value)
         q = self.pointer_node.Transform.value.get_rotate()
         #roll  = math.atan2(2 * q.y * q.w - 2 * q.x * q.z, 1 - 2 * q.y * q.y - 2 * q.z * q.z) * 180 / math.pi
         #pitch = math.atan2(2 * q.x * q.w - 2 * q.y * q.z, 1 - 2 * q.x * q.x - 2 * q.z * q.z) * 180 / math.pi
         angle   = -math.asin( 2 * q.x * q.y + 2 * q.z * q.w) * 180 / math.pi # equals to yaw
-        #print(self.pointer_node.Transform.value)
-        #print(self.pointer_node.WorldTransform.value)
-        #print("Roll : ", roll)
-        #print("Pitch: ", pitch)
-        #print("Yaw  : ", angle)
-        #angle2 = self.get_roll_angle(self.pointer_node.Transform.value * avango.gua.make_rot_mat(-90, 0.0, 0.0, 1.0))
-        #print("angle: ", angle2)
         if abs(angle) >= 15.0:
-            angle *= 0.00001
+            angle *= 0.00005
             if (self.marker_distance + angle >= 0.0 and self.marker_distance + angle <= 1.0):
                 self.marker_distance += angle
 
         self.marker_geometry.Transform.value = avango.gua.make_trans_mat(0.0, 0.0, self.marker_distance * -self.ray_length) * \
                                                avango.gua.make_scale_mat(self.depth_marker_size, self.depth_marker_size, self.depth_marker_size)
+
+        # ## get the node closest to the marker
+        # distance = 10000000000000000000000000000
+        # for obj in self.selected_nodes:
+        #     node = obj.WorldTransform.value*avango.gua.Vec4(0.0,0.0,0.0,1.0)
+        #     marker = self.marker_geometry.WorldTransform.value*avango.gua.Vec4(0.0,0.0,0.0,1.0)
+        #     calc = math.sqrt((marker[0] - node[0])*(marker[0] - node[0])+(marker[1] - node[1])*(marker[1] - node[1]) + (marker[2] - node[2])*(marker[2] - node[2]))
+        #     if calc < distance:
+        #         distance = calc
+        #         self.selected_node = obj
+
+        ## calc ray intersection
+        ManipulationTechnique.update_intersection(self, PICK_MAT = self.pointer_node.WorldTransform.value, PICK_LENGTH = self.ray_length) # call base-class function
+
+        ## update object selection
+        self.selection()
+
+        ## drag object
+        ManipulationTechnique.dragging(self)
+    
+    def selection(self):
+
+        ## disable highlighting for objects which are not intersected
+        if self.selected_node is not None:
+            self.highlight(node=self.selected_node, color=avango.gua.Vec4(0.0, 1.0, 0.0, 0.3), color_override=False)
+        for obj in self.highlighted_nodes:
+            self.highlight(node=obj.Object.value.Parent.value, color=avango.gua.Vec4(0.0, 1.0, 0.0, 0.3), color_override=False)
+
+        # add intersected objects to highlighted_nodes list
+        self.highlighted_nodes.clear()
+        if len(self.mf_pick_result.value) > 0:
+            for obj in self.mf_pick_result.value:
+                self.highlighted_nodes.append(obj)
+
+        shortest_distance = self.ray_length
+        for obj in self.highlighted_nodes:
+            distance = abs(self.marker_distance - obj.Distance.value) 
+            if distance < shortest_distance:
+                shortest_distance = distance
+                self.selected_node = obj.Object.value.Parent.value
+
+        ## enable highlighting for objects in highlighted_nodes list
+        for obj in self.highlighted_nodes:
+            self.highlight(node=obj.Object.value.Parent.value, color=avango.gua.Vec4(0.0, 1.0, 0.0, 0.3))
+
+        self.highlight(node=self.selected_node, color=avango.gua.Vec4(1.0, 0.0, 0.0, 0.5))
+
+
+
+
+
+
+        # if len(self.mf_pick_result.value) > 0: # intersection found
+        #     self.pick_result = self.mf_pick_result.value # get first pick result                        
+            
+        # else: # nothing hit
+        #     self.pick_result = None       
+
+        # ## disable previous node highlighting
+        # if len(self.selected_nodes)>0:
+        #     for node in self.selected_nodes :
+        #         if node is not None:
+        #             for _child_node in node.Children.value:
+        #                 if _child_node.get_type() == 'av::gua::TriMeshNode':
+        #                     _child_node.Material.value.set_uniform("enable_color_override", False)
+        #     self.selected_nodes.clear()        
+        # if self.pick_result is not None : # something was hit
+        #     for obj in self.pick_result :
+        #         node = obj.Object.value.Parent.value
+        #         if node not in self.selected_nodes:
+        #             self.selected_nodes.append(node)
+        # else:
+        #     self.selected_nodes.clear()
+        
+        # for node in self.selected_nodes :
+        #     if node!=self.selected_node:
+        #         node = self.highlight(node, avango.gua.Vec4(0.0,0.0,1.0,0.3))  
+        #     else:
+        #         node = self.highlight(node,avango.gua.Vec4(1.0,0.0,0.0,0.3))      
 
 
 class GoGo(ManipulationTechnique):
@@ -485,7 +586,18 @@ class GoGo(ManipulationTechnique):
 
 
         ### resources ###
- 
+        _loader = avango.gua.nodes.TriMeshLoader()
+
+        self.hand_geometry = _loader.create_geometry_from_file("hand_geometry", "data/objects/hand.obj", avango.gua.LoaderFlags.DEFAULTS)
+        self.pointer_node.Tags.value = ["invisible"]
+        self.hand_geometry.Transform.value = \
+            avango.gua.make_scale_mat(3)
+        self.hand_transform = avango.gua.nodes.TransformNode(Name = "hand_transform")
+        self.hand_transform.Children.value = [self.hand_geometry]
+        self.pointer_node.Children.value.append(self.hand_transform)
+
+        self.chest_node = avango.gua.nodes.TransformNode(Name = "chest_node")
+        #self.chest_node.Transform.value =  
         ## To-Do: init (geometry) nodes here
  
         ### set initial states ###
