@@ -10,7 +10,7 @@ import avango.daemon
 ### import python libraries ###
 import math
 import sys
-
+import time
 
 class ManipulationManager(avango.script.Script):
 
@@ -623,13 +623,41 @@ class VirtualHand(ManipulationTechnique):
         self.sc_vel = 0.15 / 60.0 # in meter/sec
         self.max_vel = 0.25 / 60.0 # in meter/sec
 
+        self.last_frames = []
+        self.last_frame_time = time.time()
+        self.last_pointer_position = self.pointer_node.WorldTransform.value.get_translate()
 
         ### resources ###
+        _loader = avango.gua.nodes.TriMeshLoader()
 
-        ## To-Do: init (geometry) nodes here        
+        self.hand_geometry = _loader.create_geometry_from_file("hand_geometry", "data/objects/hand.obj", avango.gua.LoaderFlags.DEFAULTS)
+        #self.pointer_node.Tags.value = ["invisible"]
+        self.hand_geometry.Transform.value = \
+            avango.gua.make_scale_mat(3)
+        self.hand_transform = avango.gua.nodes.TransformNode(Name = "hand_transform")
+        self.hand_transform.Children.value = [self.hand_geometry]    
+
+        NAVIGATION_NODE.Children.value.append(self.hand_transform)
 
         ### set initial states ###
         self.enable(False)
+
+    def enable(self, BOOL):
+        self.enable_flag = BOOL
+        
+        if self.enable_flag == True:
+            #self.pointer_node.Tags.value = [] # set tool visible
+            self.hand_transform.Tags.value = [] # set hand visible
+            self.SCENEGRAPH["/navigation/controller1_trans"].Tags.value = ["invisible"]
+
+            self.last_frame_time = time.time()
+            self.last_pointer_position = self.pointer_node.WorldTransform.value.get_translate()
+
+        else:
+            self.stop_dragging() # possibly stop active dragging process
+            
+            self.hand_transform.Tags.value = ["invisible"] # set hand invisible
+            self.SCENEGRAPH["/navigation/controller1_trans"].Tags.value = []
 
 
     ### callback functions ###
@@ -638,4 +666,22 @@ class VirtualHand(ManipulationTechnique):
             return
 
         ## To-Do: implement Virtual Hand (with PRISM filter) technique here
-        
+        current_frame_time = time.time()
+        delta_distance = self.pointer_node.Transform.value.get_translate() - self.last_pointer_position # Vector
+        delta_time = current_frame_time - self.last_frame_time
+
+        self.last_frames.append((current_frame_time, delta_time, delta_distance)) # add tuple
+        self.last_frames = [element for element in self.last_frames if current_frame_time - element[0] <= 0.5] # only consider the last 500ms
+
+        # calculate velocity vector
+        velocity = avango.gua.Vec3(0, 0, 0)
+        for frame in self.last_frames:
+            frame_velocity = frame[2] / frame[1]
+            velocity += frame_velocity
+        velocity /= len(self.last_frames) # build the mean velocity by diving by the amount of last frames
+
+        print("FV:", velocity)
+            
+
+        self.last_pointer_position = self.pointer_node.Transform.value.get_translate()
+        self.last_frame_time = current_frame_time
