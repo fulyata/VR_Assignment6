@@ -524,8 +524,8 @@ class GoGo(ManipulationTechnique):
         ### parameters ###  
         self.intersection_point_size = 0.03 # in meter
         self.gogo_threshold = 0.35 # in meter
-        # we assume our body center is 45 cm lower than the head
-        self.head_to_body_center = self.HEAD_NODE.Transform.value * avango.gua.make_trans_mat(0.0, -0.45, 0.0)
+
+        self.head_to_body_offset = avango.gua.make_trans_mat(0.0, -0.45, 0.0) # we assume our body center is 45 cm lower than the head
 
         ### resources ###
         _loader = avango.gua.nodes.TriMeshLoader()
@@ -564,15 +564,22 @@ class GoGo(ManipulationTechnique):
         if self.enable_flag == False:
             return
 
-        #neutral_position = (self.HEAD_NODE.Transform.value * self.head_to_hand_transform).get_translate()
         pointer_position = self.pointer_node.Transform.value.get_translate()
-        body_center_position = (self.HEAD_NODE.Transform.value * self.head_to_body_center).get_translate()
-        body_center_to_pointer = pointer_position - body_center_position
+        body_center_position = (self.HEAD_NODE.Transform.value * self.head_to_body_offset).get_translate()
+        body_center_to_pointer = pointer_position - body_center_position # vector in space
         distance_to_body_center = body_center_position.distance_to(pointer_position)
 
         self.hand_transform.Transform.value =  avango.gua.make_trans_mat(body_center_position) * \
                                                avango.gua.make_trans_mat(body_center_to_pointer * self.transfer(distance_to_body_center)) * \
                                                avango.gua.make_rot_mat(self.pointer_node.Transform.value.get_rotate())
+
+         ## calc ray intersection
+        self.update_intersection(PICK_MAT = self.hand_transform.WorldTransform.value, PICK_LENGTH = 0.20) # call base-class function
+
+        ## update object selection
+        self.selection() # call base-class function
+
+        self.dragging()
 
     def transfer(self, distance):
         if distance <= self.gogo_threshold:
@@ -580,6 +587,16 @@ class GoGo(ManipulationTechnique):
         else:
             return (1.0 - self.gogo_threshold + distance)**3
 
+    def start_dragging(self, NODE):
+        self.dragged_node = NODE        
+        self.dragging_offset_mat = avango.gua.make_inverse_mat(self.hand_transform.WorldTransform.value) * self.dragged_node.WorldTransform.value # object transformation in pointer coordinate system
+    
+    def dragging(self):
+        if self.dragged_node is not None: # object to drag
+            _new_mat = self.hand_transform.WorldTransform.value * self.dragging_offset_mat # new object position in world coodinates
+            _new_mat = avango.gua.make_inverse_mat(self.dragged_node.Parent.value.WorldTransform.value) * _new_mat # transform new object matrix from global to local space
+        
+            self.dragged_node.Transform.value = _new_mat
         
             
 
