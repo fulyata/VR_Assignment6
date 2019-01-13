@@ -653,6 +653,10 @@ class VirtualHand(ManipulationTechnique):
             self.last_frame_time = time.time()
             self.last_pointer_position = self.pointer_node.WorldTransform.value.get_translate()
 
+            # initialize hand position
+            self.hand_transform.Transform.value = self.pointer_node.Transform.value
+            self.last_hand_position = self.hand_transform.Transform.value.get_translate()
+
         else:
             self.stop_dragging() # possibly stop active dragging process
             
@@ -676,12 +680,35 @@ class VirtualHand(ManipulationTechnique):
         # calculate velocity vector
         velocity = avango.gua.Vec3(0, 0, 0)
         for frame in self.last_frames:
-            frame_velocity = frame[2] / frame[1]
+            frame_velocity = frame[2] / (frame[1] * 60)
             velocity += frame_velocity
-        velocity /= len(self.last_frames) # build the mean velocity by diving by the amount of last frames
+        #velocity /= len(self.last_frames) # build the mean velocity by diving by the amount of last frames
+        velocity /= len(self.last_frames) 
 
-        print("FV:", velocity)
-            
+        D_hand = delta_distance
+        print("D_hand:", D_hand)
+        print("Kx:", self.K(velocity.x))
+        print("Ky:", self.K(velocity.y))
+        print("Kz:", self.K(velocity.z))
+        D_object = avango.gua.Vec3(self.K(velocity.x) * D_hand.x, 
+                                   self.K(velocity.y) * D_hand.y,
+                                   self.K(velocity.z) * D_hand.z)
 
+        print("D_object:", D_object)
+
+        # update hand position
+        self.hand_transform.Transform.value = avango.gua.make_trans_mat(D_object) *\
+                                              avango.gua.make_trans_mat(self.last_hand_position) * \
+                                              avango.gua.make_rot_mat(self.pointer_node.Transform.value.get_rotate())
+
+        self.last_hand_position = self.hand_transform.Transform.value.get_translate()
         self.last_pointer_position = self.pointer_node.Transform.value.get_translate()
         self.last_frame_time = current_frame_time
+
+    def K(self, S_hand):
+        if abs(S_hand) >= self.sc_vel:
+            return 1.0
+        elif self.min_vel < abs(S_hand) and abs(S_hand) < self.sc_vel:
+            return S_hand / self.sc_vel
+        else:
+            return 0.0
