@@ -623,10 +623,13 @@ class VirtualHand(ManipulationTechnique):
         self.sc_vel = 0.15 / 60.0 # in meter/sec
         self.max_vel = 0.25 / 60.0 # in meter/sec
 
+        self.D_hand = avango.gua.Vec3()
+        self.marker_size = 0.03
+        
         self.last_frames = []
         self.last_frame_time = time.time()
         self.last_pointer_position = self.pointer_node.WorldTransform.value.get_translate()
-
+        self.time_maxV = 0.0
         ### resources ###
         _loader = avango.gua.nodes.TriMeshLoader()
 
@@ -635,7 +638,15 @@ class VirtualHand(ManipulationTechnique):
         self.hand_geometry.Transform.value = \
             avango.gua.make_scale_mat(3)
         self.hand_transform = avango.gua.nodes.TransformNode(Name = "hand_transform")
-        self.hand_transform.Children.value = [self.hand_geometry]    
+        self.hand_transform.Children.value = [self.hand_geometry]
+
+        # reference ball
+        
+        # self.marker_geometry = _loader.create_geometry_from_file("reference_marker_geometry", "data/objects/sphere.obj", avango.gua.LoaderFlags.DEFAULTS)
+        # self.marker_geometry.Transform.value = \
+        #    avango.gua.make_scale_mat(self.marker_size)
+        # self.marker_geometry.Material.value.set_uniform("Color", avango.gua.Vec4(0.0, 0.0, 0.5, 0.5))
+        # self.pointer_node.Children.value.append(self.marker_geometry)
 
         NAVIGATION_NODE.Children.value.append(self.hand_transform)
 
@@ -673,7 +684,7 @@ class VirtualHand(ManipulationTechnique):
         current_frame_time = time.time()
         delta_distance = self.pointer_node.Transform.value.get_translate() - self.last_pointer_position # Vector
         delta_time = current_frame_time - self.last_frame_time
-
+        current_state = 0
         self.last_frames.append((current_frame_time, delta_time, delta_distance)) # add tuple
         self.last_frames = [element for element in self.last_frames if current_frame_time - element[0] <= 0.5] # only consider the last 500ms
 
@@ -683,13 +694,36 @@ class VirtualHand(ManipulationTechnique):
             frame_velocity = frame[2] / (frame[1] * 60)
             velocity += frame_velocity
         #velocity /= len(self.last_frames) # build the mean velocity by diving by the amount of last frames
-        velocity /= len(self.last_frames) 
 
-        D_hand = delta_distance
-        print("D_hand:", D_hand)
-        print("Kx:", self.K(velocity.x))
-        print("Ky:", self.K(velocity.y))
-        print("Kz:", self.K(velocity.z))
+        if velocity <= self.min_vel:
+            self.D_hand += delta_distance
+            current_state = 0
+        elif self.min_vel < velocity <= self.sc_vel:
+            self.hand_geometry.Transform.value = avango.gua.make_trans_mat(self.D_hand.x + S_hand / self.sc_vel * self.hand_geometry.Transform.value.get_translate().x,
+                                                                           self.D_hand.y + S_hand / self.sc_vel * self.hand_geometry.Transform.value.get_translate().y,
+                                                                           self.D_hand.z + S_hand / self.sc_vel * self.hand_geometry.Transform.value.get_translate().z)
+            current_state = 0
+        elif self.sc_vel < velocity <= self.max_vel:
+            self.hand_geometry.Transform.value = avango.gua.make_trans_mat(self.D_hand.x + self.hand_geometry.Transform.value.get_translate().x,
+                                                                           self.D_hand.y + self.hand_geometry.Transform.value.get_translate().y,
+                                                                           self.D_hand.z + self.hand_geometry.Transform.value.get_translate().z)
+            current_state = 0
+        else:
+            if current_state != 1:
+                self.time_maxV = time.time()
+            if self.time_maxV < current_frame_time < self.time_maxV + 0.5:
+                self.D_hand *= 0.8
+            if self.time_maxV + 0.5 <= current_frame_time < self.time_maxV + 1.0:
+                self.D_hand *= 0.5
+            if current_frame_time => self.time_maxV + 1.0:
+                self.D_hand = 0
+                
+
+        #D_hand = delta_distance
+        #print("D_hand:", D_hand)
+        #print("Kx:", self.K(velocity.x))
+        #print("Ky:", self.K(velocity.y))
+        #print("Kz:", self.K(velocity.z))
         D_object = avango.gua.Vec3(self.K(velocity.x) * D_hand.x, 
                                    self.K(velocity.y) * D_hand.y,
                                    self.K(velocity.z) * D_hand.z)
@@ -705,6 +739,9 @@ class VirtualHand(ManipulationTechnique):
         self.last_pointer_position = self.pointer_node.Transform.value.get_translate()
         self.last_frame_time = current_frame_time
 
+        # self.selection()
+        # self.dragging()
+        
     def K(self, S_hand):
         if abs(S_hand) >= self.sc_vel:
             return 1.0
@@ -712,3 +749,14 @@ class VirtualHand(ManipulationTechnique):
             return S_hand / self.sc_vel
         else:
             return 0.0
+
+    # def start_dragging(self, NODE):
+    #     self.dragged_node = NODE        
+    #     self.dragging_offset_mat = avango.gua.make_inverse_mat(self.hand_transform.WorldTransform.value) * self.dragged_node.WorldTransform.value # object transformation in pointer coordinate system
+    
+     def dragging(self):
+         if self.dragged_node is not None: # object to drag
+             _new_mat = self.hand_transform.WorldTransform.value * self.dragging_offset_mat # new object position in world coodinates
+             _new_mat = avango.gua.make_inverse_mat(self.dragged_node.Parent.value.WorldTransform.value) * _new_mat # transform new object matrix from global to local space
+        
+             self.dragged_node.Transform.value = _new_mat
