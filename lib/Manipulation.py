@@ -454,6 +454,7 @@ class DepthRay(ManipulationTechnique):
             return
 
         q = self.pointer_node.Transform.value.get_rotate()
+        
         angle   = -math.asin( 2 * q.x * q.y + 2 * q.z * q.w) * 180 / math.pi # equals to yaw
         if abs(angle) >= 15.0:
             angle *= 0.00005
@@ -585,7 +586,7 @@ class GoGo(ManipulationTechnique):
         if distance <= self.gogo_threshold:
             return 1.0
         else:
-            return (1.0 - self.gogo_threshold + distance)**3
+            return (1.0 - self.gogo_threshold + distance)**4
 
     def start_dragging(self, NODE):
         self.dragged_node = NODE        
@@ -627,20 +628,27 @@ class VirtualHand(ManipulationTechnique):
         self.last_frame_time = time.time()
         self.last_pointer_position = self.pointer_node.WorldTransform.value.get_translate()
 
+        self.marker_size = 0.03
+
         ### resources ###
         _loader = avango.gua.nodes.TriMeshLoader()
 
         self.hand_geometry = _loader.create_geometry_from_file("hand_geometry", "data/objects/hand.obj", avango.gua.LoaderFlags.DEFAULTS)
-        #self.pointer_node.Tags.value = ["invisible"]
-        self.hand_geometry.Transform.value = \
-            avango.gua.make_scale_mat(3)
+        self.hand_geometry.Transform.value = avango.gua.make_scale_mat(3)
         self.hand_transform = avango.gua.nodes.TransformNode(Name = "hand_transform")
         self.hand_transform.Children.value = [self.hand_geometry]    
 
+        self.marker_geometry = _loader.create_geometry_from_file("marker_geometry", "data/objects/sphere.obj", avango.gua.LoaderFlags.DEFAULTS)
+        self.marker_geometry.Material.value.set_uniform("Color", avango.gua.Vec4(0.5, 0.5, 0.5, 1.0))
+        #self.distance_marker_to_hand = 0.05
+        self.marker_geometry.Transform.value = avango.gua.make_scale_mat(self.marker_size, self.marker_size, self.marker_size)
+        
         NAVIGATION_NODE.Children.value.append(self.hand_transform)
+        self.hand_transform.Children.value.append(self.marker_geometry)
 
         ### set initial states ###
         self.enable(False)
+
 
     def enable(self, BOOL):
         self.enable_flag = BOOL
@@ -705,6 +713,13 @@ class VirtualHand(ManipulationTechnique):
         self.last_pointer_position = self.pointer_node.Transform.value.get_translate()
         self.last_frame_time = current_frame_time
 
+        ## calc ray intersection
+        #self.update_intersection(PICK_MAT = self.hand_transform.WorldTransform.value, PICK_LENGTH = 0.20) # call base-class function
+        
+        #self.selection()
+
+        #self.dragging()
+
     def K(self, S_hand):
         if abs(S_hand) >= self.sc_vel:
             return 1.0
@@ -712,3 +727,14 @@ class VirtualHand(ManipulationTechnique):
             return S_hand / self.sc_vel
         else:
             return 0.0
+
+    # def start_dragging(self, NODE):
+    #     self.dragged_node = NODE        
+    #     self.dragging_offset_mat = avango.gua.make_inverse_mat(self.hand_transform.WorldTransform.value) * self.dragged_node.WorldTransform.value # object transformation in pointer coordinate system
+    
+    # def dragging(self):
+    #     if self.dragged_node is not None: # object to drag
+    #         _new_mat = self.hand_transform.WorldTransform.value * self.dragging_offset_mat # new object position in world coodinates
+    #         _new_mat = avango.gua.make_inverse_mat(self.dragged_node.Parent.value.WorldTransform.value) * _new_mat # transform new object matrix from global to local space
+        
+    #         self.dragged_node.Transform.value = _new_mat
